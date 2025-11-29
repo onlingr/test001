@@ -1,10 +1,47 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ShoppingCart, Plus, Minus, Trash2, ChefHat, LayoutDashboard, UtensilsCrossed, X, Star, ArrowLeft, CheckCircle, User, Phone, ShoppingBag, Filter, ArrowUpDown, ChevronDown, Clock, MapPin, Store, Settings, Save, Upload, Image, Search, Bell, Pencil, Lock, LogOut } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, ChefHat, LayoutDashboard, UtensilsCrossed, X, Star, ArrowLeft, CheckCircle, User, Phone, ShoppingBag, Filter, ArrowUpDown, ChevronDown, Clock, MapPin, Store, Settings, Save, Upload, Image, Search, Bell, Pencil, Lock, LogOut, ServerCrash, RefreshCw } from 'lucide-react';
 import { MenuItem, Category, CartItem, Order, OrderStatus, ViewMode, StoreSettings } from './types';
-import { INITIAL_MENU } from './constants';
+import { api } from './services/api';
 
 // --- Components ---
+
+// 0. Connection Error Screen
+const ConnectionErrorScreen: React.FC<{ onRetry: () => void }> = ({ onRetry }) => (
+  <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 text-center">
+    <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-gray-100">
+      <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
+        <ServerCrash className="w-10 h-10 text-red-500" />
+      </div>
+      <h2 className="text-2xl font-black text-gray-900 mb-3">無法連接到後端伺服器</h2>
+      <p className="text-gray-500 mb-8 leading-relaxed">
+        前端網頁無法與後端取得聯繫。這通常代表伺服器未啟動。請嘗試以下步驟：
+      </p>
+      
+      <div className="bg-gray-50 rounded-xl p-4 text-left mb-8 space-y-3 border border-gray-200">
+        <div className="flex gap-3">
+          <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold shrink-0">1</div>
+          <p className="text-sm text-gray-700">確認已安裝 Python 與套件<br/><code className="text-xs bg-gray-200 px-1 py-0.5 rounded text-gray-600">pip install fastapi uvicorn sqlalchemy pymysql</code></p>
+        </div>
+        <div className="flex gap-3">
+          <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold shrink-0">2</div>
+          <p className="text-sm text-gray-700">確認 MariaDB 資料庫已建立並執行 SQL</p>
+        </div>
+        <div className="flex gap-3">
+          <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold shrink-0">3</div>
+          <p className="text-sm text-gray-700">確認後端伺服器正在執行<br/><code className="text-xs bg-gray-200 px-1 py-0.5 rounded text-gray-600">python main.py</code></p>
+        </div>
+      </div>
+
+      <button 
+        onClick={onRetry}
+        className="w-full py-4 bg-brand-600 text-white font-bold rounded-xl hover:bg-brand-700 shadow-lg shadow-brand-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+      >
+        <RefreshCw className="w-5 h-5" /> 重試連線
+      </button>
+    </div>
+  </div>
+);
 
 // 0. Admin Login Modal
 const AdminLoginModal: React.FC<{
@@ -26,7 +63,7 @@ const AdminLoginModal: React.FC<{
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === '5209') {
+    if (password === '1234') {
       onLogin();
     } else {
       setError(true);
@@ -292,7 +329,7 @@ const CustomerMenu: React.FC<{
   );
 };
 
-// 3. Cart Drawer (Desktop) / Bottom Sheet (Mobile)
+// 3. Cart Drawer
 const CartDrawer: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -304,13 +341,6 @@ const CartDrawer: React.FC<{
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
-
-  // 重置表單
-  useEffect(() => {
-    if (!isOpen) {
-      // 可以在這裡重置
-    }
-  }, [isOpen]);
 
   const handleSubmit = () => {
     if (name.trim() && phone.trim()) {
@@ -327,20 +357,17 @@ const CartDrawer: React.FC<{
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end items-end md:items-stretch">
-      {/* Overlay */}
       <div 
         className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" 
         onClick={onClose} 
       />
       
-      {/* Drawer Content */}
       <div className={`
         relative w-full bg-white shadow-2xl flex flex-col transition-transform duration-300
         md:w-[480px] md:h-full md:rounded-l-2xl
         h-[85vh] rounded-t-2xl animate-slide-up md:animate-slide-left
       `}>
         
-        {/* Mobile Handle */}
         <div className="md:hidden w-full flex justify-center pt-3 pb-1 cursor-pointer" onClick={onClose}>
             <div className="w-12 h-1.5 bg-gray-300 rounded-full"></div>
         </div>
@@ -416,7 +443,6 @@ const CartDrawer: React.FC<{
                 ))}
               </div>
 
-              {/* Customer Info Form */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-gray-900 font-bold text-lg border-l-4 border-brand-500 pl-3">
                   <User className="w-5 h-5" /> 
@@ -507,7 +533,8 @@ const AdminDashboard: React.FC<{
   onToggleItemAvailability: (id: string) => void;
   settings: StoreSettings;
   onUpdateSettings: (settings: StoreSettings) => void;
-}> = ({ orders, updateOrderStatus, menu, onAddMenuItem, onEditMenuItem, onDeleteMenuItem, onToggleItemAvailability, settings, onUpdateSettings }) => {
+  refreshData: () => void;
+}> = ({ orders, updateOrderStatus, menu, onAddMenuItem, onEditMenuItem, onDeleteMenuItem, onToggleItemAvailability, settings, onUpdateSettings, refreshData }) => {
   const [activeTab, setActiveTab] = useState<'ORDERS' | 'MENU' | 'SETTINGS'>('ORDERS');
   const [filterStatus, setFilterStatus] = useState<OrderStatus | 'ALL'>('ALL');
   const [sortOption, setSortOption] = useState<'NEWEST' | 'OLDEST' | 'AMOUNT_HIGH' | 'AMOUNT_LOW'>('NEWEST');
@@ -578,8 +605,8 @@ const AdminDashboard: React.FC<{
         // Add Mode
         onAddMenuItem({
           ...newItem as MenuItem,
-          id: Date.now().toString(),
-          imageUrl: newItem.imageUrl || `https://picsum.photos/seed/${Date.now()}/400/300`, // fallback if no image uploaded
+          id: '', // Backend will assign ID
+          imageUrl: newItem.imageUrl || `https://picsum.photos/seed/${Date.now()}/400/300`,
         });
       }
       setIsModalOpen(false);
@@ -647,7 +674,7 @@ const AdminDashboard: React.FC<{
       <div className="sticky top-16 z-30 bg-gray-50/95 backdrop-blur -mx-4 px-4 py-2 mb-6 border-b border-gray-200/50">
         <div className="flex gap-2">
           <button
-            onClick={() => setActiveTab('ORDERS')}
+            onClick={() => { setActiveTab('ORDERS'); refreshData(); }}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold transition-all relative ${
               activeTab === 'ORDERS' ? 'bg-gray-900 text-white shadow-lg' : 'bg-white text-gray-500 border border-gray-200'
             }`}
@@ -745,7 +772,7 @@ const AdminDashboard: React.FC<{
                 )}
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-4 flex-wrap pr-8">
-                    <span className="font-mono text-xl font-black text-gray-900 tracking-tight">#{order.id.slice(-4)}</span>
+                    <span className="font-mono text-xl font-black text-gray-900 tracking-tight">#{order.id.toString().slice(-4)}</span>
                     <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(order.status)}`}>
                       {order.status}
                     </span>
@@ -1141,6 +1168,9 @@ export default function App() {
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
+  // Connection State
+  const [connectionError, setConnectionError] = useState(false);
+
   // Settings State
   const [storeSettings, setStoreSettings] = useState<StoreSettings>({
     name: '滋味點餐',
@@ -1150,29 +1180,37 @@ export default function App() {
   // Shop Status Logic
   const isShopOpen = storeSettings.isOpen;
 
-  // Initialize Data
-  useEffect(() => {
-    // In a real app, fetch from API
-    setMenu(INITIAL_MENU);
-    
-    // Load Orders
-    const savedOrders = localStorage.getItem('tasty_orders');
-    if (savedOrders) setOrders(JSON.parse(savedOrders));
-
-    // Load Settings
-    const savedSettings = localStorage.getItem('tasty_settings');
-    if (savedSettings) setStoreSettings(JSON.parse(savedSettings));
+  // Load Initial Data from API
+  const fetchData = useCallback(async () => {
+    try {
+      // Note: We don't setConnectionError(false) here to avoid flashing states.
+      // We only clear error upon success.
+      const [menuData, ordersData, settingsData] = await Promise.all([
+        api.getMenu(),
+        api.getOrders(),
+        api.getSettings()
+      ]);
+      setMenu(menuData);
+      setOrders(ordersData);
+      setStoreSettings(settingsData);
+      setConnectionError(false); // Success! Clear any previous errors.
+    } catch (error) {
+      console.error('Failed to fetch data:', error);
+      setConnectionError(true);
+      // Optional: don't show toast if we are showing full screen error
+      // showNotification('無法連接後端伺服器'); 
+    }
   }, []);
 
-  // Save Orders on change
   useEffect(() => {
-    localStorage.setItem('tasty_orders', JSON.stringify(orders));
-  }, [orders]);
-
-  // Save Settings on change
-  useEffect(() => {
-    localStorage.setItem('tasty_settings', JSON.stringify(storeSettings));
-  }, [storeSettings]);
+    fetchData();
+    // Optional: Polling for new orders every 30 seconds
+    const interval = setInterval(() => {
+       // Just call fetchData, if it fails, it will set error state
+       fetchData();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchData]); // Removed connectionError dependency
 
   const showNotification = (msg: string) => {
     setNotification(msg);
@@ -1228,59 +1266,91 @@ export default function App() {
 
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-  const submitOrder = (customerName: string, customerPhone: string, customerNote: string) => {
-    const newOrder: Order = {
-      id: Date.now().toString(),
-      items: [...cart],
-      totalAmount: cartTotal,
-      status: OrderStatus.PENDING,
-      timestamp: Date.now(),
-      customerName,
-      customerPhone,
-      customerNote
-    };
-    setOrders(prev => [...prev, newOrder]);
-    setCart([]);
-    setIsCartOpen(false);
-    showNotification('訂單已送出！廚房準備中');
-  };
-
-  // Admin Logic
-  const updateOrderStatus = (orderId: string, status: OrderStatus) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
-  };
-
-  const addMenuItem = (item: MenuItem) => {
-    setMenu(prev => [item, ...prev]);
-    showNotification('菜單已更新');
-  };
-
-  const editMenuItem = (updatedItem: MenuItem) => {
-    setMenu(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
-    showNotification('餐點資料已修改');
-  };
-
-  const deleteMenuItem = (id: string) => {
-    if (confirm('確定要刪除此餐點嗎？')) {
-      setMenu(prev => prev.filter(item => item.id !== id));
+  const submitOrder = async (customerName: string, customerPhone: string, customerNote: string) => {
+    try {
+      await api.createOrder({
+        customerName,
+        customerPhone,
+        customerNote,
+        totalAmount: cartTotal,
+        items: cart.map(item => ({ name: item.name, price: item.price, quantity: item.quantity }))
+      });
+      setCart([]);
+      setIsCartOpen(false);
+      showNotification('訂單已送出！廚房準備中');
+      fetchData(); // Refresh orders
+    } catch (error) {
+      console.error(error);
+      showNotification('訂單送出失敗，請稍後再試');
     }
   };
 
-  const toggleItemAvailability = (id: string) => {
-    setMenu(prev => prev.map(item => {
-      if (item.id === id) {
-        const newStatus = !item.isAvailable;
-        showNotification(newStatus ? '餐點已上架' : '餐點已標記售完');
-        return { ...item, isAvailable: newStatus };
-      }
-      return item;
-    }));
+  // Admin Logic
+  const updateOrderStatus = async (orderId: string, status: OrderStatus) => {
+    try {
+      await api.updateOrderStatus(orderId, status);
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+      showNotification('訂單狀態已更新');
+    } catch (error) {
+      showNotification('更新失敗');
+    }
   };
 
-  const updateSettings = (newSettings: StoreSettings) => {
-    setStoreSettings(newSettings);
-    showNotification('商店設定已更新');
+  const addMenuItem = async (item: MenuItem) => {
+    try {
+      await api.addMenuItem(item);
+      fetchData();
+      showNotification('菜單已更新');
+    } catch (error) {
+      showNotification('新增失敗');
+    }
   };
+
+  const editMenuItem = async (updatedItem: MenuItem) => {
+    try {
+      await api.updateMenuItem(updatedItem);
+      fetchData();
+      showNotification('餐點資料已修改');
+    } catch (error) {
+      showNotification('修改失敗');
+    }
+  };
+
+  const deleteMenuItem = async (id: string) => {
+    if (confirm('確定要刪除此餐點嗎？')) {
+      try {
+        await api.deleteMenuItem(id);
+        fetchData();
+        showNotification('餐點已刪除');
+      } catch (error) {
+        showNotification('刪除失敗');
+      }
+    }
+  };
+
+  const toggleItemAvailability = async (id: string) => {
+    try {
+      await api.toggleMenuItem(id);
+      fetchData();
+      showNotification('餐點狀態已切換');
+    } catch (error) {
+      showNotification('操作失敗');
+    }
+  };
+
+  const updateSettings = async (newSettings: StoreSettings) => {
+    try {
+      await api.updateSettings(newSettings);
+      setStoreSettings(newSettings);
+      showNotification('商店設定已更新');
+    } catch (error) {
+      showNotification('設定更新失敗');
+    }
+  };
+
+  if (connectionError) {
+    return <ConnectionErrorScreen onRetry={fetchData} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-800">
@@ -1312,6 +1382,7 @@ export default function App() {
             onToggleItemAvailability={toggleItemAvailability}
             settings={storeSettings}
             onUpdateSettings={updateSettings}
+            refreshData={fetchData}
           />
         )}
       </main>
